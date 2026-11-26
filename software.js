@@ -1,14 +1,14 @@
 import * as THREE from './assets/three.module.min.js';
-import outlines from './outline.js';
 
 // Canvas renderer for devices where a WebGL context is unavailable.
-export function createSoftwareRenderer(meshes, onLoad) {
+export function createSoftwareRenderer(meshes, latexMeshes, onLoad) {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas is unavailable');
-  const polygons = meshes.flatMap(({geometry}, index) => readPolygons(geometry, outlines[index]));
+  const polygons = meshes.flatMap(({geometry}) => readPolygons(geometry));
+  const latexPolygons = latexMeshes.flatMap(({geometry}) => readPolygons(geometry));
   const textures = {};
-  for (const [name,file] of Object.entries({metal:'brushed',stone:'stone',fur:'fur',liquid:'fluid-reflection',wood:'wood',graffiti:'graffiti',comic:'comic'})) {
+  for (const [name,file] of Object.entries({metal:'brushed',stone:'stone',fur:'fur',liquid:'water-caustics',rubber:'latex-finish',wood:'wood',graffiti:'graffiti',comic:'comic'})) {
     const image = new Image();
     image.onload = () => {
       textures[name] = ctx.createPattern(image, 'repeat');
@@ -42,7 +42,7 @@ export function createSoftwareRenderer(meshes, onLoad) {
     canvas.height = Math.round(h * pixelRatio);
   }
 
-  function render(camera, group, kind, time, fur) {
+  function render(camera, group, kind, time, fur, ripple) {
     if (!width || !height) return;
     ctx.setTransform(pixelRatio,0,0,pixelRatio,0,0);
     ctx.clearRect(0,0,width,height);
@@ -51,7 +51,7 @@ export function createSoftwareRenderer(meshes, onLoad) {
     const matrix = group.matrixWorld;
     const normalMatrix = new THREE.Matrix3().getNormalMatrix(matrix);
     const visible = [];
-    for (const face of polygons) {
+    for (const face of kind === 'rubber' ? latexPolygons : polygons) {
       normal.copy(face.normal).applyNormalMatrix(normalMatrix);
       world.copy(face.center).applyMatrix4(matrix);
       intoCamera.subVectors(camera.position, world).normalize();
@@ -132,10 +132,10 @@ export function createSoftwareRenderer(meshes, onLoad) {
         stripe(paint,[[0,color(225,21,18+l*25)],[.22,color(227,32,43+l*25)],[.24,'#e5e8fc'],[.43,'#f7f7ff'],[.44,color(240,25,22+l*19)],[.63,color(240,22,20+l*13)],[.65,'#a9b5d7'],[.84,'#e2eaff'],[.86,color(230,30,32+l*20)],[1,'#5f6882']]);
       } else if (kind === 'liquid') {
         paint = centeredGradient();
-        stripe(paint,[[0,color(184,75,15+l*23)],[.26,color(174,67,26+l*48)],[.37,color(185,49,49+l*44)],[.51,color(190,82,14+l*29)],[.72,color(174,77,36+l*43)],[.90,color(182,74,16+l*23)],[1,color(191,82,10+l*26)]]);
+        stripe(paint, [[0,'#7ee9ff9e'],[.21,'#3692bc52'],[.39,'#dcfbffab'],[.54,'#27679653'],[.76,'#90e9fd80'],[1,'#2c79b862']]);
       } else if (kind === 'rubber') {
         paint = centeredGradient();
-        stripe(paint, [[0,'#0b0b0f'],[.23,color(245,9,12+l*12)],[.39,color(243,8,22+l*25)],[.51,color(245,7,11+l*13)],[.69,'#09090c'],[.86,color(242,8,10+l*19)],[1,'#0b0b10']]);
+        stripe(paint, [[0,'#0c0d12'],[.20,'#3a393d'],[.35,'#858589'],[.55,'#232329'],[.79,'#08090f'],[1,'#444652']]);
       } else if (printed) {
         paint = kind === 'comic' ? '#e0ae43' : '#3c2d59';
       } else if (kind === 'wood') {
@@ -145,35 +145,59 @@ export function createSoftwareRenderer(meshes, onLoad) {
       }
       ctx.fillStyle = paint;
       ctx.fill();
-      if (textures[kind] && (face.cap || (x1-x0)*(y1-y0)>240)) {
+      if (textures[kind] && (face.cap || kind === 'liquid' || (x1-x0)*(y1-y0)>240)) {
         ctx.save();
         ctx.clip();
         const scale = Math.max(.18, Math.min(width,height)/760);
-        const offset = kind === 'liquid' ? (time*45)%512 : 0;
         const pattern = textures[kind];
         const origin = project(face.points[0],camera,matrix);
         const axis = project(face.points[0].clone().add(face.tangent),camera,matrix);
-        pattern.setTransform(new DOMMatrix().translate(origin[0]+offset,origin[1]+offset*.4).rotate(Math.atan2(axis[1]-origin[1],axis[0]-origin[0])*180/Math.PI).scale(scale,scale));
+        pattern.setTransform(new DOMMatrix().translate(origin[0],origin[1]).rotate(Math.atan2(axis[1]-origin[1],axis[0]-origin[0])*180/Math.PI).scale(scale,scale));
         ctx.fillStyle = pattern;
-        if (printed && face.cap) {
+        if ((printed || kind === 'rubber') && face.cap) {
           const z = face.points[0].z;
           const at = (x,y) => project(new THREE.Vector3(x,y,z),camera,matrix);
           const [x,y] = at(0,0);
           const [u,v] = at(1,0);
           const [p,q] = at(0,-1);
-          const uvScale = 1/(640*.66*.56);
+          const textureSize = printed ? 640 : 768;
+          const uvScale = 1/(textureSize*.66*(printed ? .56 : .52));
           pattern.setTransform(new DOMMatrix([
             (u-x)*uvScale, (v-y)*uvScale, (p-x)*uvScale, (q-y)*uvScale,
-            x-(u+p-2*x)*uvScale*320, y-(v+q-2*y)*uvScale*320
+            x-(u+p-2*x)*uvScale*textureSize/2, y-(v+q-2*y)*uvScale*textureSize/2
           ]));
         }
-        ctx.globalAlpha = kind === 'stone' || kind === 'wood' ? .94 : kind === 'fur' ? .58 : kind === 'liquid' ? .80 : .40;
+        ctx.globalAlpha = kind === 'stone' || kind === 'wood' ? .94 : kind === 'fur' ? .58 : .40;
         ctx.globalCompositeOperation = kind === 'stone' || kind === 'fur' || kind === 'wood' ? 'overlay' : 'soft-light';
         if (printed) {
           ctx.globalAlpha = 1;
           ctx.globalCompositeOperation = 'source-over';
         }
+        if (kind === 'rubber') {
+          ctx.globalAlpha = side ? .29 : .91;
+          ctx.globalCompositeOperation = 'source-over';
+        }
+        if (kind === 'liquid') {
+          const [ox,oy] = project(new THREE.Vector3(0,0,face.center.z),camera,matrix);
+          const phase = time*.62;
+          const cell = Math.min(width,height)/3500;
+          const pulse = ripple.energy;
+          pattern.setTransform(new DOMMatrix().translate(
+            ox + 17*Math.sin(phase) + ripple.x*70,
+            oy + 14*Math.cos(phase*.83) + ripple.y*58
+          ).rotate(reflection*11 + Math.sin(phase)*9)
+            .skewX(ripple.x*27 + Math.sin(phase*.9)*11)
+            .scale(cell*(1+pulse*.22),cell*(.78 + pulse*.36)));
+          ctx.globalAlpha = (side ? .45 : .82) + pulse*.15;
+          ctx.globalCompositeOperation = 'screen';
+        }
         ctx.fillRect(x0,y0,x1-x0,y1-y0);
+        if (kind === 'rubber') {
+          ctx.globalAlpha = .48;
+          ctx.globalCompositeOperation = 'soft-light';
+          ctx.fillStyle = paint;
+          ctx.fillRect(x0,y0,x1-x0,y1-y0);
+        }
         if (printed) {
           ctx.fillStyle = `rgba(12,9,27,${(1-l)*.52 + (side ? .14 : 0)})`;
           ctx.fillRect(x0,y0,x1-x0,y1-y0);
@@ -182,7 +206,9 @@ export function createSoftwareRenderer(meshes, onLoad) {
       }
       ctx.strokeStyle = side && (kind === 'metal' || kind === 'mirror') ? color(247,28,22+l*29) : paint;
       if (kind === 'comic' && face.cap) ctx.strokeStyle = '#20162e';
-      ctx.lineWidth = kind === 'comic' && face.cap ? 2 : side ? .58 : .42;
+      if (kind === 'liquid') ctx.strokeStyle = side ? '#a8e8ff58' : '#b7f2ffab';
+      if (kind === 'rubber' && !side) ctx.strokeStyle = '#17171e';
+      ctx.lineWidth = kind === 'liquid' && !side ? 1.35 : kind === 'comic' && face.cap ? 2 : side ? .58 : .42;
       ctx.stroke();
     }
 
@@ -221,14 +247,13 @@ export function createSoftwareRenderer(meshes, onLoad) {
   return {domElement:canvas,setSize,render};
 }
 
-function readPolygons(geometry, outline) {
-  const points = outline.map(([x,y]) => new THREE.Vector3((x-540)/260,(675-y)/260,0));
-  if (points[0].equals(points.at(-1))) points.pop();
+function readPolygons(geometry) {
+  const position = geometry.attributes.position;
+  const capDepth = Math.abs(position.getZ(0));
   const faces = [-1,1].map(sign => {
-    const capPoints = points.map(point => point.clone().setZ(sign*.295));
+    const capPoints = geometry.userData.contour.map(({x,y}) => new THREE.Vector3(x,y,sign*capDepth));
     return createPolygon(capPoints,new THREE.Vector3(0,0,sign),true);
   });
-  const position = geometry.attributes.position;
   const normal = geometry.attributes.normal;
   const vector = i => new THREE.Vector3().fromBufferAttribute(position,i);
   for (let i=geometry.groups[1].start;i<position.count;i+=6) {

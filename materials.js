@@ -36,17 +36,19 @@ export function createMaterialSet(renderer, scene, onLoad) {
   const fur = new THREE.MeshStandardMaterial({
     color: '#ee91c2', map: getTexture('fur', true), roughness: 1, envMapIntensity: .43
   });
+  const latexBump = getTexture('latex-bump');
+  latexBump.repeat.setScalar(.52);
+  latexBump.offset.set(.5,.5);
   const liquid = new THREE.MeshPhysicalMaterial({
-    color: '#0d9a98', metalness: .49, roughness: .19,
-    clearcoat: 1, clearcoatRoughness: .10,
-    iridescence: .37, iridescenceIOR: 1.35,
-    bumpMap: fluidBump, bumpScale: .13, clearcoatNormalScale: new THREE.Vector2(.3,.3),
-    envMapIntensity: 1.32
+    color: '#c7edff', metalness: 0, roughness: .074, transmission: .89,
+    ior: 1.333, thickness: .55, attenuationColor: '#7dd7f6', attenuationDistance: 1.95,
+    bumpMap: fluidBump, bumpScale: .063, envMapIntensity: 2.0
   });
   const rubber = new THREE.MeshPhysicalMaterial({
-    color: '#141418', metalness: 0, roughness: .32,
-    clearcoat: .85, clearcoatRoughness: .19, envMapIntensity: 1.24,
-    specularIntensity: .65
+    color: '#111116', metalness: 0, roughness: .245,
+    bumpMap: latexBump, bumpScale: .105,
+    clearcoat: .9, clearcoatRoughness: .17, envMapIntensity: 1.72,
+    specularIntensity: 1
   });
   const wood = new THREE.MeshStandardMaterial({
     color: '#fff2dc', map: getTexture('wood', true), bumpMap: getTexture('wood'),

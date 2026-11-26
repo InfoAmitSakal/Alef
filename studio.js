@@ -19,11 +19,12 @@ try {
 
 function startStudio() {
   const { group, meshes } = createLetter();
+  const latex = createLetter(true);
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('webgl2', {alpha:true, antialias:true});
   const renderer = context
     ? new THREE.WebGLRenderer({canvas, context, alpha:true, antialias:true})
-    : createSoftwareRenderer(meshes, () => requestRender());
+    : createSoftwareRenderer(meshes, latex.meshes, () => requestRender());
   if (context) {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -51,6 +52,8 @@ function startStudio() {
   }
 
   scene.add(group);
+  group.add(latex.group);
+  latex.group.visible = false;
   if (context) scene.add(createGround());
   const gpu = context ? createMaterialSet(renderer, scene, () => requestRender()) : null;
   const views = [
@@ -74,6 +77,7 @@ function startStudio() {
   let frame = 0;
   let previousTime = null;
   let time = 0;
+  const ripple = { energy:0, x:0, y:0 };
 
   function requestRender() {
     if (!frame) frame = requestAnimationFrame(render);
@@ -84,6 +88,10 @@ function startStudio() {
     const dt = previousTime === null ? 0 : Math.min(.045, (now - previousTime) / 1000);
     previousTime = now;
     time += dt;
+    ripple.energy *= Math.exp(-dt*2.15);
+    if (ripple.energy < .002) ripple.energy = 0;
+    ripple.x *= Math.exp(-dt*2.9);
+    ripple.y *= Math.exp(-dt*2.9);
     if (spinning) group.quaternion.premultiply(rotation.setFromAxisAngle(yAxis, dt * .66));
     if (movingToPreset) {
       group.quaternion.slerp(target, 1 - Math.exp(-dt * 12));
@@ -93,10 +101,14 @@ function startStudio() {
       }
     }
     if (gpu) {
-      if (selected === 'liquid' && !reducedMotion.matches) gpu.fluidBump.offset.set((time*.071)%1, (time*.045)%1);
+      if (selected === 'liquid') {
+        gpu.choices.liquid.bumpScale = .063 + ripple.energy*.16;
+        const waterTime = reducedMotion.matches ? 0 : time;
+        gpu.fluidBump.offset.set((waterTime*.045 + ripple.x*.21)%1, (waterTime*.028 + ripple.y*.21)%1);
+      }
       renderer.render(scene, camera);
     } else {
-      renderer.render(camera, group, selected, reducedMotion.matches ? 0 : time, fur);
+      renderer.render(camera, group, selected, reducedMotion.matches ? 0 : time, fur, ripple);
     }
     if (spinning || movingToPreset || (selected === 'liquid' && !reducedMotion.matches)) requestRender();
     else previousTime = null;
@@ -116,7 +128,12 @@ function startStudio() {
     selected = button.dataset.material;
     for (const choice of materials) choice.setAttribute('aria-pressed', choice === button);
     document.querySelector('#active-material').textContent = button.textContent.trim();
-    if (gpu) for (const mesh of meshes) mesh.material = gpu.choices[selected];
+    latex.group.visible = selected === 'rubber';
+    for (const mesh of meshes) mesh.visible = selected !== 'rubber';
+    if (gpu) {
+      for (const mesh of meshes) mesh.material = gpu.choices[selected];
+      for (const mesh of latex.meshes) mesh.material = gpu.choices.rubber;
+    }
     if (selected === 'fur' && !fur) {
       fur = createFur(meshes);
       group.add(fur);
@@ -162,6 +179,11 @@ function startStudio() {
   }
 
   function drag(dx, dy) {
+    if (selected === 'liquid' && !reducedMotion.matches) {
+      ripple.energy = Math.min(1, ripple.energy + Math.hypot(dx,dy)*1.15);
+      ripple.x = THREE.MathUtils.clamp(ripple.x + dx, -1, 1);
+      ripple.y = THREE.MathUtils.clamp(ripple.y + dy, -1, 1);
+    }
     movingToPreset = false;
     flagAngle(-1);
     group.quaternion.premultiply(rotation.setFromAxisAngle(yAxis, dx));

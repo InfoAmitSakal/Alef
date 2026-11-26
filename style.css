@@ -53,7 +53,7 @@ h2{margin-bottom:9px}
 .wood{background-image:url('./assets/wood.webp');background-size:160%}
 .graffiti{background-image:url('./assets/graffiti.webp')}
 .comic{background-image:url('./assets/comic.webp')}
-.liquid{background-image:radial-gradient(ellipse at 68% 24%,#ccffff 5%,#25ddc5 21%,#097e92 37%,#0e2549 51%,#53f1e0 65%,#146783 82%)}
+.liquid{background-image:url('./assets/water-caustics.webp'),linear-gradient(138deg,#d3f9ff,#58b9db 40%,#226c97);background-size:170%,cover}
 .depth,.angles{border-top:1px solid var(--line);margin-top:18px;padding-top:15px}
 .section-row{display:flex;align-items:center;justify-content:space-between}
 output{font-size:13px;color:#5340ba;background:#f0edff;border-radius:6px;padding:2px 6px;font-weight:650;direction:ltr}

@@ -1,20 +1,22 @@
 import * as THREE from './assets/three.module.min.js';
 import outlines from './outline.js';
 
-export function createLetter() {
+export function createLetter(inflated = false) {
   const group = new THREE.Group();
   const meshes = outlines.map((outline) => {
     const points = outline.map(([x, y]) => new THREE.Vector2((x - 540) / 260, (675 - y) / 260));
     if (points[0].equals(points.at(-1))) points.pop();
-    const geometry = new THREE.ExtrudeGeometry(new THREE.Shape(points), {
+    const contour = inflated ? roundCorners(points) : points;
+    const geometry = new THREE.ExtrudeGeometry(new THREE.Shape(contour), {
       depth: .52,
       bevelEnabled: true,
-      bevelSize: .035,
-      bevelThickness: .035,
-      bevelSegments: 4,
+      bevelSize: inflated ? .083 : .035,
+      bevelThickness: inflated ? .105 : .035,
+      bevelSegments: inflated ? 7 : 4,
       steps: 1
     });
     geometry.translate(0, 0, -.26);
+    geometry.userData.contour = contour;
 
     // Keep the texture scale consistent on the faces, the bevels, and the sides.
     const { position, normal, uv } = geometry.attributes;
@@ -31,6 +33,22 @@ export function createLetter() {
     return mesh;
   });
   return { group, meshes };
+}
+
+function roundCorners(points) {
+  return points.flatMap((corner, index) => {
+    const previous = points[(index + points.length - 1) % points.length];
+    const next = points[(index + 1) % points.length];
+    const before = previous.clone().sub(corner);
+    const after = next.clone().sub(corner);
+    const reach = Math.min(.13, before.length()*.24, after.length()*.24);
+    const curve = new THREE.QuadraticBezierCurve(
+      corner.clone().add(before.setLength(reach)),
+      corner,
+      corner.clone().add(after.setLength(reach))
+    );
+    return curve.getPoints(5);
+  });
 }
 
 export function createFur(meshes) {
